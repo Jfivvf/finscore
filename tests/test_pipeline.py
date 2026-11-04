@@ -72,7 +72,7 @@ RUNNER = '''
 import contextlib, io, json, sys
 from agents.synthesizer import get_judge_model
 from eval.pipeline import initial_state, load_database, run_question
-from graph import build_graph
+from src.graph import build_graph
 
 question = sys.argv[1]
 with contextlib.redirect_stdout(io.StringIO()):
@@ -86,7 +86,7 @@ print(json.dumps({"final": result["final"], "row": row}, ensure_ascii=False))
 @pytest.fixture(scope="module")
 def project(tmp_path_factory):
     copy = tmp_path_factory.mktemp("project")
-    for name in ("agents", "eval", "graph.py", "state.py", "main.py", "__init__.py"):
+    for name in ("agents", "eval", "src", "main.py", "__init__.py"):
         source = ROOT / name
         if source.is_dir():
             shutil.copytree(source, copy / name, ignore=shutil.ignore_patterns("__pycache__"))
@@ -94,7 +94,7 @@ def project(tmp_path_factory):
             shutil.copy(source, copy / name)
     if "agents\\" in (copy / "agents" / "bull.py").read_text(encoding="UTF-8"):
         subprocess.run(["git", "apply", str(ROOT / "patches" / "skeleton_fixes.patch")], cwd=copy, check=True)
-    (copy / "client.py").write_text(FAKE_CLIENT, encoding="UTF-8")
+    (copy / "src" / "client.py").write_text(FAKE_CLIENT, encoding="UTF-8")
     (copy / "runner.py").write_text(RUNNER, encoding="UTF-8")
     return copy
 
