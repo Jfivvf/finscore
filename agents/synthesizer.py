@@ -6,8 +6,8 @@ from typing import Literal, Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, ValidationError
 
-from client import get_client
-from state import State
+from src.client import get_client
+from src.state import State
 
 DIR = Path(__file__).parent
 

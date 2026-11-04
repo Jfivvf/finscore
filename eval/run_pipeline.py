@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 from agents.synthesizer import get_judge_model
 from eval.pipeline import load_database, run_question, to_markdown
-from graph import build_graph
+from src.graph import build_graph
 
 
 def main():

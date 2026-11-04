@@ -1,11 +1,12 @@
+from pathlib import Path
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain.agents import create_agent
-from client import get_client
-from state import State
+from src.client import get_client
+from src.state import State
 from pydantic import BaseModel, Field
 from typing import Literal
 
-with open(r"agents\orchestrator_prompt.txt", "r", encoding="UTF-8") as f:
+DIR = Path(__file__).parent
+with open(DIR / "orchestrator_prompt.txt", "r", encoding="UTF-8") as f:
     prompt = f.read()
 
 

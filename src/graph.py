@@ -1,5 +1,5 @@
 from langgraph.graph import StateGraph, START, END
-from state import State
+from src.state import State
 from agents.orchestrator import orchestrator_node, road_after_orchestrator
 from agents.data_agent import data_agent_node
 from agents.validator import validator_node, road_after_validator
@@ -25,4 +25,5 @@ def build_graph():
     workflow.add_edge("bull", "bear")
     workflow.add_edge("bear", "synthesizer")
     workflow.add_edge("synthesizer", END)
+
     return workflow.compile()
