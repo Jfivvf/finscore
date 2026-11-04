@@ -1,0 +1,7 @@
+[
+  {"question": "Какая сегодня будет погода?", "task_type": "irrelevant"},
+  {"question": "Проанализируй, какие нефтяные компании наиболее успешны", "task_type": "choice"},
+  {"question": "В каком банке выгоднее открыть депозит?", "task_type": "choice"},
+  {"question": "Какая выручка у Лукойла?", "task_type": "information"},
+  {"question": "Какой процент по депозиту в Сбере?", "task_type": "information"}
+]

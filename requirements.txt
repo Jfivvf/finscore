@@ -1,0 +1,8 @@
+gigachat==0.2.3
+langchain==1.4.7
+langchain-core==1.7.1
+langchain-gigachat==0.5.1
+langgraph==1.2.18
+pydantic>=2
+pytest==9.2.0
+python-dotenv==1.2.4
