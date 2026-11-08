@@ -17,7 +17,7 @@ urllib3.disable_warnings()
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 
-GIGACHAT_B64_KEY = 'MDFhMTliOGYtMGQxYS03YjA1LWE1YjctMjAwYjYzMDM3YWU4OmNmMWExZWM1LWU4NWMtNDYzOS1hNmYwLTM3Y2ExMDI3Yjg3MA=='
+GIGACHAT_B64_KEY = ''
 
 @tool
 def fetch_quant_metrics(ticker: str) -> Dict[str, Any]:
