@@ -6,3 +6,9 @@ langgraph==1.2.18
 pydantic>=2
 pytest==9.2.0
 python-dotenv==1.2.4
+moexalgo
+pandas
+numpy
+urllib3
+streamlit
+plotly
