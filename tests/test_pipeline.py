@@ -28,6 +28,10 @@ class FakeChat(BaseChatModel):
         return self
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        if messages[0].content.startswith("Ты Quant Agent"):
+            call = {"name": "fetch_quant_metrics", "args": {"ticker": "lkoh"}, "id": "1"}
+            message = AIMessage(content="", tool_calls=[call], usage_metadata=USAGE)
+            return ChatResult(generations=[ChatGeneration(message=message)])
         message = AIMessage(content=answer(messages[0].content, messages[-1].content), usage_metadata=USAGE)
         return ChatResult(generations=[ChatGeneration(message=message)])
 
@@ -48,9 +52,11 @@ def answer(system, user):
         citations = ["Выручка Лукойла составила 25 млрд рублей", "акции Лукойла упали на 3%",
                      "Газпром получил за второй квартал года 20 млрд рублей"]
         return json.dumps({"citations": citations[:1] if user == "мало" else citations}, ensure_ascii=False)
-    if system.startswith("Роль: бык"):
+    if system.lower().startswith("роль: бык"):
+        assert "LKOH" in user, "бык не получил данные биржи"
         return "БЫК: выручка 25 млрд"
-    if system.startswith("Роль: медведь"):
+    if system.lower().startswith("роль: медведь"):
+        assert "БЫК" in user, "медведь не видит довод быка"
         return "МЕДВЕДЬ: акции упали на 3%"
     if "судья" in system:
         assert "БЫК" in user and "МЕДВЕДЬ" in user, "судья не получил аргументы"
@@ -68,6 +74,23 @@ def get_client(temperature=0.1):
     return FakeChat()
 '''
 
+FAKE_MOEXALGO = '''
+from datetime import date, timedelta
+
+
+class Ticker:
+    def __init__(self, ticker):
+        self.ticker = ticker
+
+    def candles(self, start, end, period=None, **kwargs):
+        rows = []
+        for i in range(250):
+            close = 100.5 + i
+            rows.append({"begin": date(2026, 1, 1) + timedelta(days=i), "open": close, "high": close + 1,
+                         "low": close - 1, "close": close, "volume": 1000})
+        return rows
+'''
+
 RUNNER = '''
 import contextlib, io, json, sys
 from agents.synthesizer import get_judge_model
@@ -79,7 +102,8 @@ with contextlib.redirect_stdout(io.StringIO()):
     graph = build_graph()
     result = graph.invoke(initial_state(question))
     row = run_question(graph, {"question": question, "task_type": "choice"}, get_judge_model(), load_database())
-print(json.dumps({"final": result["final"], "row": row}, ensure_ascii=False))
+rounds = [(h["round"], h["side"]) for h in result.get("debate_history", [])]
+print(json.dumps({"final": result["final"], "row": row, "rounds": rounds}, ensure_ascii=False))
 '''
 
 
@@ -92,10 +116,9 @@ def project(tmp_path_factory):
             shutil.copytree(source, copy / name, ignore=shutil.ignore_patterns("__pycache__"))
         else:
             shutil.copy(source, copy / name)
-    if "agents\\" in (copy / "agents" / "bull.py").read_text(encoding="UTF-8"):
-        subprocess.run(["git", "apply", str(ROOT / "patches" / "skeleton_fixes.patch")], cwd=copy, check=True)
     (copy / "src" / "client.py").write_text(FAKE_CLIENT, encoding="UTF-8")
     (copy / "runner.py").write_text(RUNNER, encoding="UTF-8")
+    (copy / "moexalgo.py").write_text(FAKE_MOEXALGO, encoding="UTF-8")
     return copy
 
 
@@ -108,19 +131,27 @@ def run(project, question):
 
 
 def test_debate_reaches_judge(project):
-    final = run(project, "оцени компанию")["final"]
+    result = run(project, "оцени компанию")
+    assert result["rounds"] == [[1, "bull"], [1, "bear"], [2, "bull"], [2, "bear"], [3, "bull"], [3, "bear"]]
+    final = result["final"]
     assert "Вердикт: Привлекательный" in final
     assert "Итог: Перевес на стороне быка." in final
     assert "Не хватает данных: Нет данных о прибыли." in final
     assert "Источники:" in final
+    assert "[4] Данные биржи: ticker: LKOH" in final
+    assert "current_price: 349.5" in final
 
 
 def test_information_skips_debate(project):
-    assert run(project, "сколько выручка")["final"] == "Выручка 25 млрд [1]."
+    result = run(project, "сколько выручка")
+    assert result["final"] == "Выручка 25 млрд [1]."
+    assert result["rounds"] == []
 
 
-def test_validator_stops_when_citations_are_few(project):
-    assert run(project, "мало данных")["final"] == ""
+def test_few_citations_give_neutral_verdict(project):
+    final = run(project, "мало данных")["final"]
+    assert "Вердикт: Нейтральный" in final
+    assert "Подтверждённых аргументов меньше двух" in final
 
 
 def test_irrelevant_stops_at_orchestrator(project):
@@ -135,4 +166,4 @@ def test_pipeline_metrics(project):
     assert row["route_ok"] is True
     assert row["fidelity"] == 1
     assert row["faithfulness"] == 1
-    assert row["tokens"] == 60
+    assert row["tokens"] == 100  # 10 вызовов по 10 токенов, из них 6 — три раунда дебатов

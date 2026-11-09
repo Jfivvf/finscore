@@ -75,6 +75,32 @@ def get_citations(state):
     return citations
 
 
+def format_quant(quant):
+    """Биржевые данные одной строкой, ключи как есть."""
+    if not isinstance(quant, dict) or "error" in quant:
+        return None
+    facts = []
+
+    def walk(value, key=None):
+        if isinstance(value, dict):
+            for k, v in value.items():
+                walk(v, k)
+        elif isinstance(value, (list, tuple)):
+            for v in value:
+                walk(v, key)
+        elif value is not None and value != "":
+            facts.append(f"{key}: {value}" if key else str(value))
+
+    walk(quant)
+    return "Данные биржи: " + "; ".join(facts) if facts else None
+
+
+def get_sources(state):
+    """Цитаты из базы и строка с данными биржи."""
+    quant = format_quant(state.get("quant_data"))
+    return get_citations(state) + ([quant] if quant else [])
+
+
 def format_citations(citations):
     """Нумерует цитаты для промпта."""
     message = "Цитаты из документов:\n"
@@ -112,11 +138,23 @@ def parse_answer(text):
     return arguments, str(data.get("missing", "")), dropped
 
 
+def find_source(numbers, citations):
+    """Номер единственной цитаты, где есть все числа, иначе None."""
+    if not numbers:
+        return None
+    found = [i for i, c in enumerate(citations, 1) if not numbers - extract_numbers(c)]
+    return found[0] if len(found) == 1 else None
+
+
 def verify_arguments(arguments, citations):
     """Сверяет ссылки и числа аргументов с цитатами."""
     for a in arguments:
         if a.evidence == "none":
             continue
+        if a.source is not None and extract_numbers(a.text) - extract_numbers(
+                citations[a.source - 1] if 1 <= a.source <= len(citations) else ""):
+            # модель перепутала номер: числа целиком есть в другой цитате
+            a.source = find_source(extract_numbers(a.text), citations) or a.source
         if a.source is None:
             if extract_numbers(a.text) - extract_numbers(" ".join(citations)):
                 a.note = "числа не совпадают с цитатами"
@@ -283,7 +321,7 @@ class RecordingModel:
 def synthesizer_node(state: State, model=None) -> dict:
     """Узел графа: выбирает режим по task_type."""
     recorder = RecordingModel(model or get_judge_model())
-    citations = get_citations(state)
+    citations = get_sources(state)
 
     if state["task_type"] == "information":
         result = answer_information(recorder, state.get("task", ""), citations)

@@ -5,7 +5,8 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage
 
-from agents.synthesizer import MARKUP_RE, get_citations
+from agents.debate_utils import DEFAULT_ROUNDS
+from agents.synthesizer import MARKUP_RE, get_citations, get_sources
 from eval.faithfulness import evaluate_faithfulness
 
 DATA_PROMPT = Path(__file__).parent.parent / "agents" / "data_agent_prompt.txt"
@@ -45,11 +46,15 @@ def initial_state(question):
         "messages": [HumanMessage(content=question)],
         "task": "",
         "task_type": "irrelevant",
-        "validator_res": False,
+        "ticker": "",
+        "quant_data": {},
         "data": [],
         "bull_argument": "",
         "bear_argument": "",
         "final": "",
+        "max_rounds": DEFAULT_ROUNDS,
+        "debate_round": 0,
+        "debate_history": [],
     }
 
 
@@ -62,7 +67,7 @@ def run_question(graph, case, judge_model, database):
     citations = get_citations(result)
     faithfulness = None
     if result["final"]:
-        faithfulness = evaluate_faithfulness(result["final"], citations, judge_model)["score"]
+        faithfulness = evaluate_faithfulness(result["final"], get_sources(result), judge_model)["score"]
     return {
         "question": case["question"],
         "expected": case["task_type"],

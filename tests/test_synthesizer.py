@@ -9,6 +9,7 @@ from agents.synthesizer import (
     compute_score,
     extract_numbers,
     get_citations,
+    get_sources,
     judge,
     synthesizer_node,
     verify_arguments,
@@ -214,3 +215,60 @@ def test_information_mode_without_citations():
     final = synthesizer_node(make_state(task_type="information", data="Wrong format"), model=model)["final"]
     assert "не нашлось" in final
     assert model.calls == []
+
+
+QUANT = {"ticker": "LKOH", "metrics": {"RSI_21": 71.5, "SMA_50": 6900.0, "empty": None}, "flags": ["перекуплен"]}
+
+
+def test_quant_any_keys_become_one_source():
+    sources = get_sources({"data": CITATIONS, "quant_data": QUANT})
+    assert sources[:2] == CITATIONS
+    assert sources[2] == "Данные биржи: ticker: LKOH; RSI_21: 71.5; SMA_50: 6900.0; flags: перекуплен"
+
+
+def test_quant_error_or_empty_is_ignored():
+    assert get_sources({"data": CITATIONS, "quant_data": {"error": "нет тикера"}}) == CITATIONS
+    assert get_sources({"data": CITATIONS, "quant_data": {}}) == CITATIONS
+    assert get_sources({"data": CITATIONS}) == CITATIONS
+
+
+def test_argument_from_quant_is_counted():
+    answer = judgement(
+        arg("bull", 4, "strong", source=1, text="Дивиденды 10%"),
+        arg("bear", 4, "strong", source=3, text="RSI 71,5 — акция перекуплена"),
+    )
+    final = run_final(answer, quant_data=QUANT)
+    assert "не засчитан" not in final
+    assert "[3] Данные биржи:" in final
+
+
+def test_information_mode_with_only_quant():
+    model = FakeModel("RSI 71.5 [1].")
+    final = synthesizer_node(make_state(task_type="information", data=[], quant_data=QUANT), model=model)["final"]
+    assert final == "RSI 71.5 [1]."
+    assert "Данные биржи" in model.calls[0][1].content
+
+
+def test_wrong_number_from_quant_is_not_counted():
+    verdict = judge(FakeModel(judgement(
+        arg("bull", 4, "strong", 1, "Дивиденды 10%"),
+        arg("bear", 4, "strong", 3, "RSI 90 — акция перекуплена"),
+    )), "б", "м", get_sources({"data": CITATIONS, "quant_data": QUANT}))
+    assert verdict["arguments"][1]["evidence"] == "none"
+    assert verdict["arguments"][1]["note"] == "числа не совпадают с цитатой"
+
+
+def test_wrong_source_number_is_fixed_by_numbers():
+    sources = get_sources({"data": CITATIONS, "quant_data": QUANT})
+    arguments = args(arg("bear", 4, "strong", 2, "RSI 71,5 — акция перекуплена"))
+    verify_arguments(arguments, sources)
+    assert arguments[0].source == 3
+    assert arguments[0].evidence == "strong"
+    assert arguments[0].note == ""
+
+
+def test_source_is_not_guessed_when_numbers_are_ambiguous():
+    arguments = args(arg("bull", 4, "strong", 2, "Рост 10%"))
+    verify_arguments(arguments, ["Дивиденды 10%", "Долг вырос вдвое", "Маржа 10%"])
+    assert arguments[0].source == 2
+    assert arguments[0].note == "числа не совпадают с цитатой"
