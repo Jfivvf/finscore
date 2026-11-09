@@ -15,10 +15,8 @@ from moexalgo import Ticker
 DOCS_SOURCE = "Тестовая база агента данных."
 MARKET_SOURCE = "Московская биржа, дневные свечи за последний год."
 LLM_SOURCE = "GigaChat-2."
-
 AVATAR = {"bull": "🐂", "bear": "🐻"}
 TITLE = {"bull": "Бык", "bear": "Медведь"}
-
 SHOW_SOURCES = False
 
 def initial_state(question, rounds):
@@ -112,15 +110,38 @@ def score_gauge(score):
     return fig
 
 
+#@st.cache_data(ttl=3600, show_spinner=False)
+#def load_candles(ticker):
+#    start = (datetime.now() - timedelta(days=365+300)).strftime("%Y-%m-%d")
+#    end = datetime.now().strftime("%Y-%m-%d")
+#    candles = Ticker(ticker.upper()).candles(start=start, end=end, period="1D")
+#    df = candles if isinstance(candles, pd.DataFrame) else pd.DataFrame(candles)
+#    if df.empty:
+#        return df
+#    df = df[["begin", "open", "high", "low", "close", "volume"]].copy()
+#    df = df.sort_values("begin").reset_index(drop=True)
+#    delta = df["close"].diff()
+#    gain = delta.where(delta > 0, 0).rolling(window=14).mean()
+#    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+#    df["RSI_14"] = 100 - (100 / (1 + gain / loss))
+#    df["SMA_50"] = df["close"].rolling(window=50).mean()
+#    df["SMA_200"] = df["close"].rolling(window=200).mean()
+#    df = df[df["begin"] >= datetime.now() - timedelta(days=365)].reset_index(drop=True)
+#    return df
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_candles(ticker):
-    start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+    start = (datetime.now() - timedelta(days=365 + 300)).strftime("%Y-%m-%d")
     end = datetime.now().strftime("%Y-%m-%d")
-    candles = Ticker(ticker.upper()).candles(start=start, end=end)
+    candles = Ticker(ticker.upper()).candles(start=start, end=end, period="1D")
     df = candles if isinstance(candles, pd.DataFrame) else pd.DataFrame(candles)
     if df.empty:
         return df
     df = df[["begin", "open", "high", "low", "close", "volume"]].copy()
+    # ВАЖНО: приводим begin к datetime
+    df["begin"] = pd.to_datetime(df["begin"], errors="coerce")
+    df = df.dropna(subset=["begin"])
     df = df.sort_values("begin").reset_index(drop=True)
     delta = df["close"].diff()
     gain = delta.where(delta > 0, 0).rolling(window=14).mean()
@@ -128,6 +149,9 @@ def load_candles(ticker):
     df["RSI_14"] = 100 - (100 / (1 + gain / loss))
     df["SMA_50"] = df["close"].rolling(window=50).mean()
     df["SMA_200"] = df["close"].rolling(window=200).mean()
+    # сравнение datetime с datetime — теперь корректно
+    cutoff = pd.Timestamp.now() - pd.Timedelta(days=365)
+    df = df[df["begin"] >= cutoff].reset_index(drop=True)
     return df
 
 
@@ -147,6 +171,10 @@ def price_figure(df, ticker):
     fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
     fig.update_layout(title=f"{ticker}: котировки", height=650, xaxis_rangeslider_visible=False,
                       legend=dict(orientation="h", y=1.08), margin=dict(l=10, r=10, t=80, b=10))
+    #чтобы не было пробелов когда биржа закрыта по выходным
+    missing = pd.date_range(df["begin"].min(), df["begin"].max()).difference(df["begin"])
+    #missing = pd.date_range(df["begin"].min(), df["begin"].max()).difference(pd.DatetimeIndex(df["begin"]))
+    fig.update_xaxes(rangebreaks=[dict(values=missing)])
     return fig
 
 
