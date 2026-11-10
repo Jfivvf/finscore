@@ -37,11 +37,3 @@ def orchestrator_node(state: State) -> dict:
         "task_type": task_type,
         "messages": [response["raw"]]
     }
-
-
-def road_after_orchestrator(state: State) -> str:
-    print("road_after_orchestrator", state["task_type"])
-    if state["task_type"] == "irrelevant":
-        print("Вопрос не то теме")
-        return "end_irrelevant"
-    return "data_agent"
