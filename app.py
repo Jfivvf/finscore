@@ -8,8 +8,8 @@ from agents.debate_utils import DEFAULT_ROUNDS, MAX_ROUNDS, MIN_ROUNDS
 from agents.synthesizer import THRESHOLD, VERDICT_NEGATIVE, VERDICT_NEUTRAL, VERDICT_POSITIVE
 from src.graph import build_graph
 import pandas as pd
-from datetime import datetime, timedelta
-from moexalgo import Ticker
+from src.client import set_credentials
+from src.market import add_indicators, last_year, load_daily_candles
 
 # когда подключим реальный RAG по отчётам МСФО надо будет поправить этот текст
 DOCS_SOURCE = "Тестовая база агента данных."
@@ -110,49 +110,11 @@ def score_gauge(score):
     return fig
 
 
-#@st.cache_data(ttl=3600, show_spinner=False)
-#def load_candles(ticker):
-#    start = (datetime.now() - timedelta(days=365+300)).strftime("%Y-%m-%d")
-#    end = datetime.now().strftime("%Y-%m-%d")
-#    candles = Ticker(ticker.upper()).candles(start=start, end=end, period="1D")
-#    df = candles if isinstance(candles, pd.DataFrame) else pd.DataFrame(candles)
-#    if df.empty:
-#        return df
-#    df = df[["begin", "open", "high", "low", "close", "volume"]].copy()
-#    df = df.sort_values("begin").reset_index(drop=True)
-#    delta = df["close"].diff()
-#    gain = delta.where(delta > 0, 0).rolling(window=14).mean()
-#    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-#    df["RSI_14"] = 100 - (100 / (1 + gain / loss))
-#    df["SMA_50"] = df["close"].rolling(window=50).mean()
-#    df["SMA_200"] = df["close"].rolling(window=200).mean()
-#    df = df[df["begin"] >= datetime.now() - timedelta(days=365)].reset_index(drop=True)
-#    return df
-
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_candles(ticker):
-    start = (datetime.now() - timedelta(days=365 + 300)).strftime("%Y-%m-%d")
-    end = datetime.now().strftime("%Y-%m-%d")
-    candles = Ticker(ticker.upper()).candles(start=start, end=end, period="1D")
-    df = candles if isinstance(candles, pd.DataFrame) else pd.DataFrame(candles)
-    if df.empty:
-        return df
-    df = df[["begin", "open", "high", "low", "close", "volume"]].copy()
-    # ВАЖНО: приводим begin к datetime
-    df["begin"] = pd.to_datetime(df["begin"], errors="coerce")
-    df = df.dropna(subset=["begin"])
-    df = df.sort_values("begin").reset_index(drop=True)
-    delta = df["close"].diff()
-    gain = delta.where(delta > 0, 0).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    df["RSI_14"] = 100 - (100 / (1 + gain / loss))
-    df["SMA_50"] = df["close"].rolling(window=50).mean()
-    df["SMA_200"] = df["close"].rolling(window=200).mean()
-    # сравнение datetime с datetime — теперь корректно
-    cutoff = pd.Timestamp.now() - pd.Timedelta(days=365)
-    df = df[df["begin"] >= cutoff].reset_index(drop=True)
-    return df
+    """Те же дневные свечи и те же формулы, что у quant_agent (src/market.py)."""
+    df = load_daily_candles(ticker.upper())
+    return last_year(add_indicators(df)) if not df.empty else df
 
 
 def price_figure(df, ticker):
@@ -280,10 +242,23 @@ def render_result(result):
 st.set_page_config(page_title="FinScore", page_icon="📈", layout="wide")
 st.title("Finscore")
 
+with st.sidebar:
+    st.header("Доступ к GigaChat")
+    api_key = st.text_input("Authorization key (SberStudio)", type="password",
+                            help="Хранится только в памяти вашей сессии, на диск не пишется.")
+    scope = st.selectbox("Scope", ["GIGACHAT_API_PERS", "GIGACHAT_API_B2B", "GIGACHAT_API_CORP"])
+    if api_key:
+        st.session_state["api_key"], st.session_state["scope"] = api_key, scope
+    st.caption("Ключ берётся в личном кабинете developers.sber.ru")
+
 question = st.text_input("Введите запрос", placeholder="Например: сравни Сбербанк и ВТБ...")
 rounds = st.slider("Раундов дебатов", MIN_ROUNDS, MAX_ROUNDS, DEFAULT_ROUNDS)
 
-if st.button("Запустить", type="primary", disabled=not question.strip()):
+if not st.session_state.get("api_key"):
+    st.info("Введите ключ GigaChat в боковой панели, чтобы запустить анализ.")
+
+if st.button("Запустить", type="primary", disabled=not (question.strip() and st.session_state.get("api_key"))):
+    set_credentials(st.session_state["api_key"], st.session_state.get("scope"))
     st.session_state["result"] = run_graph(question.strip(), rounds)
     st.rerun()
 elif "result" in st.session_state:
