@@ -1,9 +1,7 @@
-import os
-import json
+from pathlib import Path
 import urllib3
-from typing import Dict, Any, TypedDict
+from typing import Dict, Any
 from langchain_core.tools import tool
-from langchain_gigachat.chat_models import GigaChat
 from langchain_core.messages import SystemMessage, HumanMessage
 import pandas as pd
 import numpy as np
@@ -11,13 +9,17 @@ from datetime import datetime, timedelta
 from typing import Dict, Any
 from moexalgo import Ticker
 from langchain_core.tools import tool
+from src.state import State
+from src.client import get_client
 
 # инженерные фиксы
 urllib3.disable_warnings()
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
+# os.environ["OPENBLAS_NUM_THREADS"] = "1"
+# os.environ["MKL_NUM_THREADS"] = "1"
 
-GIGACHAT_B64_KEY = ''
+DIR = Path(__file__).parent
+with open(DIR / "quant_prompt.txt", "r", encoding="UTF-8") as f:
+    prompt = f.read()
 
 @tool
 def fetch_quant_metrics(ticker: str) -> Dict[str, Any]:
@@ -95,40 +97,18 @@ def fetch_quant_metrics(ticker: str) -> Dict[str, Any]:
         return {"error": f"Ошибка расчета метрик для {ticker}: {str(e)}"}
 
 
-llm = GigaChat(
-    credentials=GIGACHAT_B64_KEY,
-    model="GigaChat-Pro",
-    base_url="https://gigachat.devices.sberbank.ru/api/v1",
-    verify_ssl_certs=False,
-    scope="GIGACHAT_API_PERS",
-    temperature=0.01
-)
-
-quant_llm_with_tools = llm.bind_tools([fetch_quant_metrics])
-
-
-class AgentState(TypedDict):
-    user_query: str  # Исходный промпт пользователя
-    ticker: str  # Извлеченный тикер
-    quant_data: Dict[str, Any]  # Результат работы инструмента
-
-
-def quant_data_node(state: AgentState) -> dict:
+def quant_data_node(state: State) -> dict:
     """Узел графа, принимающий текстовый запрос и вызывающий нужные расчеты."""
-
-    query = state.get("user_query", "Оцени финансовые показатели актива")
-    print(f"\n[Quant Agent] Получен запрос из графа: '{query}'")
-
-    sys_prompt = SystemMessage(content=(
-        "Ты Quant Agent — строгий финансовый дата-инженер проекта FinScore. "
-        "Твоя цель: понять, о какой компании спрашивает пользователь, извлечь ее тикер биржи MOEX "
-        "и вызвать инструмент fetch_quant_metrics. Никогда не генерируй текст ответа, используй только инструмент."
-    ))
-    user_message = HumanMessage(content=query)
+    print("Quant!!!")
+    llm = get_client()
+    quant_llm_with_tools = llm.bind_tools([fetch_quant_metrics])
+    task = state['task']
+    print(f"\n[Quant Agent] Получен запрос из графа: {task}")
 
     try:
         # LLM анализирует запрос
-        ai_response = quant_llm_with_tools.invoke([sys_prompt, user_message])
+        ai_response = quant_llm_with_tools.invoke([SystemMessage(content=prompt),
+                                                   HumanMessage(content=task)])
 
         # Проверяем, вызвала ли LLM инструмент
         if ai_response.tool_calls:
@@ -139,7 +119,7 @@ def quant_data_node(state: AgentState) -> dict:
 
             # Выполняем функцию с аргументами от LLM
             raw_data = fetch_quant_metrics.invoke(tool_call["args"])
-            print("[Quant Agent] Данные успешно получены!")
+            print(extracted_ticker, raw_data, "\n\n")
 
             return {
                 "ticker": extracted_ticker,
@@ -150,18 +130,5 @@ def quant_data_node(state: AgentState) -> dict:
             return {"quant_data": {"error": "ИИ не смог преобразовать промпт в вызов функции."}}
 
     except Exception as e:
+        print(f"Сбой LLM: {str(e)}")
         return {"quant_data": {"error": f"Сбой LLM: {str(e)}"}}
-
-
-# if __name__ == "__main__":
-#     test_state = {
-#         "user_query": "Привет! Хочу узнать метрики по Сбербанку за последнее время.",
-#         "ticker": "",
-#         "quant_data": {}
-#     }
-#
-#     print("Запуск тестирования Quant Agent...")
-#     final_state = quant_data_node(test_state)
-#
-#     print("СОСТОЯНИЕ ГРАФА ПОСЛЕ ОТРАБОТКИ АГЕНТА:")
-#     print(json.dumps(final_state, indent=4, ensure_ascii=False))
