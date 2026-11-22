@@ -6,7 +6,7 @@ class State(TypedDict):
     messages: Annotated[list[BaseMessage], operator.add]
     task: str
     task_type : str  # "irrelevant", "information", "choice"
-    ticker: str
+    tickers: List[str]
     quant_data: Dict[str, Any]
     data: List[str]
     bull_argument: str

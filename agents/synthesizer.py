@@ -75,9 +75,9 @@ def get_citations(state):
     return citations
 
 
-def format_quant(quant):
-    """Биржевые данные одной строкой, ключи как есть."""
-    if not isinstance(quant, dict) or "error" in quant:
+def _format_single_quant(data, label=None):
+    """Форматирует метрики одной компании; пропускает записи с ошибкой."""
+    if not isinstance(data, dict) or "error" in data:
         return None
     facts = []
 
@@ -91,14 +91,46 @@ def format_quant(quant):
         elif value is not None and value != "":
             facts.append(f"{key}: {value}" if key else str(value))
 
-    walk(quant)
-    return "Данные биржи: " + "; ".join(facts) if facts else None
+    walk(data)
+    if not facts:
+        return None
+    prefix = f"Данные биржи ({label}): " if label else "Данные биржи: "
+    return prefix + "; ".join(facts)
+
+
+def format_quant_list(quant):
+    """Отдельная цитата на каждую валидную компанию (поддерживает 1 и несколько тикеров)."""
+    if not isinstance(quant, dict) or not quant or "error" in quant:
+        return []
+
+    if isinstance(quant.get("companies"), dict):
+        entries = quant["companies"].items()
+    elif "ticker" in quant:
+        single = _format_single_quant(quant)
+        return [single] if single else []
+    elif all(isinstance(v, dict) for v in quant.values()):
+        entries = quant.items()
+    else:
+        single = _format_single_quant(quant)
+        return [single] if single else []
+
+    lines = []
+    for ticker, data in entries:
+        line = _format_single_quant(data, label=ticker)
+        if line:
+            lines.append(line)
+    return lines
+
+
+def format_quant(quant):
+    """Биржевые данные одной строкой (совместимо со старыми вызовами и тестами)."""
+    lines = format_quant_list(quant)
+    return "\n".join(lines) if lines else None
 
 
 def get_sources(state):
-    """Цитаты из базы и строка с данными биржи."""
-    quant = format_quant(state.get("quant_data"))
-    return get_citations(state) + ([quant] if quant else [])
+    """Цитаты из базы и отдельные строки данных биржи по каждой компании."""
+    return get_citations(state) + format_quant_list(state.get("quant_data"))
 
 
 def format_citations(citations):

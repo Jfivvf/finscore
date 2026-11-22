@@ -46,7 +46,7 @@ def initial_state(question):
         "messages": [HumanMessage(content=question)],
         "task": "",
         "task_type": "irrelevant",
-        "ticker": "",
+        "tickers": [],
         "quant_data": {},
         "data": [],
         "bull_argument": "",

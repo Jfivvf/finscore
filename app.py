@@ -24,7 +24,7 @@ def initial_state(question, rounds):
         "messages": [HumanMessage(content=question)],
         "task": "",
         "task_type": "irrelevant",
-        "ticker": "",
+        "tickers": [],
         "quant_data": {},
         "data": [],
         "bull_argument": "",
@@ -42,8 +42,13 @@ def describe(node, payload):
     if node == "data_agent":
         return f"Агент данных: найдено цитат — {len(payload.get('data', []))}"
     if node == "quant_agent":
-        err = (payload.get("quant_data") or {}).get("error")
-        return f"Quant: ошибка — {err}" if err else f"Quant: данные биржи по тикеру {payload.get('ticker')} получены"
+        quant = payload.get("quant_data") or {}
+        err = quant.get("error")
+        if err:
+            return f"Quant: ошибка — {err}"
+        tickers = payload.get("tickers") or ([payload["ticker"]] if payload.get("ticker") else [])
+        label = ", ".join(tickers) if tickers else "не определены"
+        return f"Quant: данные биржи получены ({label})"
     if node in ("bull", "bear"):
         entry = payload["debate_history"][-1]
         return f"{TITLE[node]}: раунд {entry['round']}"
@@ -59,7 +64,8 @@ def show_turn(entry):
 
 
 def run_graph(question, rounds):
-    result = {"trace": [], "history": [], "final": "", "error": "", "notice": "", "quant": {}, "ticker": "", "citations": []}
+    result = {"trace": [], "history": [], "final": "", "error": "", "notice": "", "quant": {}, "tickers": [],
+              "citations": []}
     started = time.time()
     with st.status("Агенты работают...", expanded=True) as status:
         try:
@@ -75,7 +81,8 @@ def run_graph(question, rounds):
                         result["citations"] = payload.get("data") or []
                     if node == "quant_agent":
                         result["quant"] = payload.get("quant_data") or {}
-                        result["ticker"] = payload.get("ticker", "")
+                        result["tickers"] = payload.get("tickers") or (
+                            [payload["ticker"]] if payload.get("ticker") else [])
                     if node in ("bull", "bear"):
                         entry = payload["debate_history"][-1]
                         result["history"].append(entry)
@@ -205,12 +212,16 @@ def render_sources(result):
 
 
 def quant_items(quant):
-    if not quant:
+    if not quant or not isinstance(quant, dict):
         return []
     if isinstance(quant.get("companies"), dict):
         return list(quant["companies"].items())
     if quant.get("error"):
         return [(None, quant)]
+    if "ticker" in quant:
+        return [(quant.get("ticker"), quant)]
+    if all(isinstance(v, dict) for v in quant.values()):
+        return list(quant.items())
     return [(quant.get("ticker"), quant)]
 
 

@@ -7,9 +7,9 @@ if __name__ == "__main__":
     task = input()
     state = {
         "messages": [HumanMessage(content=task)],
-        "task": "Sayso",
+        "task": task,
         "task_type": "irrelevant",
-        "ticker": "",
+        "tickers": [],
         "quant_data": dict(),
         "data": [],
         "bull_argument": "",
