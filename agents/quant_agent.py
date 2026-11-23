@@ -153,6 +153,7 @@ def quant_data_node(state: State) -> dict:
                     all_metrics[ticker] = metrics
 
         print(f"[Quant Agent] Готово. Обработаны тикеры: {extracted_tickers}\n")
+        print(f"[Quant Agent] Данные: {all_metrics}\n")
         return {
             "tickers": extracted_tickers,
             "quant_data": all_metrics,

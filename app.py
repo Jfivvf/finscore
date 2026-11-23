@@ -3,10 +3,11 @@ import time
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
-from langchain_core.messages import HumanMessage
 from agents.debate_utils import DEFAULT_ROUNDS, MAX_ROUNDS, MIN_ROUNDS
 from agents.synthesizer import THRESHOLD, VERDICT_NEGATIVE, VERDICT_NEUTRAL, VERDICT_POSITIVE
+from src.client import LLM_SOURCE
 from src.graph import build_graph
+from src.state import initial_state
 import pandas as pd
 from datetime import datetime, timedelta
 from moexalgo import Ticker
@@ -14,26 +15,9 @@ from moexalgo import Ticker
 # когда подключим реальный RAG по отчётам МСФО надо будет поправить этот текст
 DOCS_SOURCE = "Тестовая база агента данных."
 MARKET_SOURCE = "Московская биржа, дневные свечи за последний год."
-LLM_SOURCE = "GigaChat-2."
 AVATAR = {"bull": "🐂", "bear": "🐻"}
 TITLE = {"bull": "Бык", "bear": "Медведь"}
 SHOW_SOURCES = False
-
-def initial_state(question, rounds):
-    return {
-        "messages": [HumanMessage(content=question)],
-        "task": "",
-        "task_type": "irrelevant",
-        "ticker": "",
-        "quant_data": {},
-        "data": [],
-        "bull_argument": "",
-        "bear_argument": "",
-        "final": "",
-        "max_rounds": rounds,
-        "debate_round": 0,
-        "debate_history": [],
-    }
 
 
 def describe(node, payload):
@@ -43,7 +27,7 @@ def describe(node, payload):
         return f"Агент данных: найдено цитат — {len(payload.get('data', []))}"
     if node == "quant_agent":
         err = (payload.get("quant_data") or {}).get("error")
-        return f"Quant: ошибка — {err}" if err else f"Quant: данные биржи по тикеру {payload.get('ticker')} получены"
+        return f"Quant: ошибка — {err}" if err else f"Quant: данные биржи по тикерам {payload.get('tickers')} получены"
     if node in ("bull", "bear"):
         entry = payload["debate_history"][-1]
         return f"{TITLE[node]}: раунд {entry['round']}"
@@ -59,7 +43,7 @@ def show_turn(entry):
 
 
 def run_graph(question, rounds):
-    result = {"trace": [], "history": [], "final": "", "error": "", "notice": "", "quant": {}, "ticker": "", "citations": []}
+    result = {"trace": [], "history": [], "final": "", "error": "", "notice": "", "quant": {}, "tickers": [], "citations": []}
     started = time.time()
     with st.status("Агенты работают...", expanded=True) as status:
         try:
@@ -75,7 +59,7 @@ def run_graph(question, rounds):
                         result["citations"] = payload.get("data") or []
                     if node == "quant_agent":
                         result["quant"] = payload.get("quant_data") or {}
-                        result["ticker"] = payload.get("ticker", "")
+                        result["tickers"] = payload.get("tickers", [])
                     if node in ("bull", "bear"):
                         entry = payload["debate_history"][-1]
                         result["history"].append(entry)
@@ -108,26 +92,6 @@ def score_gauge(score):
     ))
     fig.update_layout(height=260, margin=dict(l=20, r=20, t=50, b=10))
     return fig
-
-
-#@st.cache_data(ttl=3600, show_spinner=False)
-#def load_candles(ticker):
-#    start = (datetime.now() - timedelta(days=365+300)).strftime("%Y-%m-%d")
-#    end = datetime.now().strftime("%Y-%m-%d")
-#    candles = Ticker(ticker.upper()).candles(start=start, end=end, period="1D")
-#    df = candles if isinstance(candles, pd.DataFrame) else pd.DataFrame(candles)
-#    if df.empty:
-#        return df
-#    df = df[["begin", "open", "high", "low", "close", "volume"]].copy()
-#    df = df.sort_values("begin").reset_index(drop=True)
-#    delta = df["close"].diff()
-#    gain = delta.where(delta > 0, 0).rolling(window=14).mean()
-#    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-#    df["RSI_14"] = 100 - (100 / (1 + gain / loss))
-#    df["SMA_50"] = df["close"].rolling(window=50).mean()
-#    df["SMA_200"] = df["close"].rolling(window=200).mean()
-#    df = df[df["begin"] >= datetime.now() - timedelta(days=365)].reset_index(drop=True)
-#    return df
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -173,7 +137,6 @@ def price_figure(df, ticker):
                       legend=dict(orientation="h", y=1.08), margin=dict(l=10, r=10, t=80, b=10))
     #чтобы не было пробелов когда биржа закрыта по выходным
     missing = pd.date_range(df["begin"].min(), df["begin"].max()).difference(df["begin"])
-    #missing = pd.date_range(df["begin"].min(), df["begin"].max()).difference(pd.DatetimeIndex(df["begin"]))
     fig.update_xaxes(rangebreaks=[dict(values=missing)])
     return fig
 
@@ -199,19 +162,24 @@ def render_sources(result):
         if result.get("citations"):
             for i, c in enumerate(result["citations"], 1):
                 st.markdown(f"[{i}] {c}")
-        if any(not d.get("error") for _, d in quant_items(result.get("quant"))):
+        if any(not d.get("error") for _, d in quant_items(result.get("tickers"), result.get("quant"))):
             st.markdown(f"**Рынок.** {MARKET_SOURCE}")
         st.markdown("**Модель.** " + LLM_SOURCE)
 
 
-def quant_items(quant):
+def quant_items(tickers, quant):
+    print(quant)
     if not quant:
         return []
     if isinstance(quant.get("companies"), dict):
         return list(quant["companies"].items())
     if quant.get("error"):
         return [(None, quant)]
-    return [(quant.get("ticker"), quant)]
+    
+    items = []
+    for t in tickers:
+        items.append((t, quant[t]))
+    return items
 
 
 def render_company(ticker, data):
@@ -234,8 +202,8 @@ def render_company(ticker, data):
     render_prices(ticker)
 
 
-def render_market(quant):
-    items = quant_items(quant)
+def render_market(tickers, quant):
+    items = quant_items(tickers, quant)
     if not items:
         return
     st.subheader("Данные биржи")
@@ -253,7 +221,7 @@ def render_result(result):
         st.error(result["error"])
     if result.get("notice"):
         st.info(result["notice"])
-    render_market(result.get("quant"))
+    render_market(result.get("tickers"), result.get("quant"))
     if result["trace"]:
         with st.expander("Траектория рассуждений агентов", expanded=False):
             st.code("\n".join(result["trace"]), language=None)
