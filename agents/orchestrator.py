@@ -34,6 +34,10 @@ def orchestrator_node(state: State) -> dict:
         AIMessage(content='{"task_type": "choice", "task": "Сделай скоринг финансовых активов в нефтяной сфере"}'),
         HumanMessage(content="Как дела у ит-грандов"),
         AIMessage(content='{"task_type": "information", "task": "Как дела у ит-грандовIT"}'),
+        HumanMessage(content="Какая сегдня будет погода?"),
+        AIMessage(content='{"task_type": "irrelevant", "task": ""}'),
+        HumanMessage(content="Как производить анализ финактивов"),
+        AIMessage(content='{"task_type": "information", "task": "Как производить анализ фин. активов"}'),
         HumanMessage(content=message)
     ])
     
